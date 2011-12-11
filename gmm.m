@@ -55,8 +55,8 @@ for itr = 1: max_iteration
   end
   prev_loglikelihood = loglikelihood;
 end
-disp([num2str(itr) ' iterations, log-likelihood = ' ...
-    num2str(loglikelihood)]);
+% disp([num2str(itr) ' iterations, log-likelihood = ' ...
+%     num2str(loglikelihood)]);
 
 function prob = gaussian (X, means, covars)
 % Compute probabilities w.r.t. Gaussian distribution
