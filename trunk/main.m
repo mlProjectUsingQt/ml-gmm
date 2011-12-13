@@ -14,14 +14,20 @@
 %% load data
 % This is the texture dataset. mseyed: provide the images later.
 fprintf ('Loading data...');
-data = load('star.mat');
-trX = data.X;
-trY = data.D';
-data = load('star_test.mat');
-teX = data.X;
-teY = data.D';
+% data = load('star.mat');
+data = load('mnist8vs9train.mat');
+% trX = data.X;
+% trY = data.D;
+trX = data.X';
+trY = data.Y;
+% data = load('star_test.mat');
+data = load('mnist8vs9test.mat');
+% teX = data.X;
+% teY = data.D';
+teX = data.XX';
+teY = data.YY;
 fprintf('done\n');
-% %% train classifier
+%% train classifier
 % % uniform distribution
 % d = size(trX);
 % distribution =  ones(1,d(2))/d(2);
@@ -52,9 +58,8 @@ fprintf('done\n');
 % d = size(SubsampledSet);
 % distribution =  ones(1,d(2))/d(2);
 
-trX = trX(:, 1: 100);
-trY = trY(1: 100);
-K = 10;
+N = size(trX, 2);
+K = N / 100;
 gmm_total_start_time = tic;
 [SubsampledSet Z] = gmm(trX', K);
 gmm_total_time = toc(gmm_total_start_time);
@@ -91,31 +96,31 @@ fprintf('Performance on training set: %f \n', trPerformance_subsample );
 fprintf('Performance on testing set: %f \n', tePerformance_subsample);
 
 %% Display output images (testing)
-
-numPixels = 256*256;
-% input images
-figure(1);
-for i = 1:8
-    subplot(4,2,i);
-    imagesc(reshape(teX(21,(i-1)*numPixels+1:i*numPixels),256,256));
-    colormap gray;
-    axis off;
-end
-
-% output images (first scenario)
-figure(2);
-for i = 1:8
-    subplot(4,2,i);
-    imagesc(reshape(teP_Original((i-1)*numPixels+1:i*numPixels),256,256));
-    colormap gray;
-    axis off;
-end
-    
-% output images (second scenario)
-figure(3);
-for i = 1:8
-    subplot(4,2,i);
-    imagesc(reshape(teP_subsample((i-1)*numPixels+1:i*numPixels),256,256));
-    colormap gray;
-    axis off;
-end
+% 
+% numPixels = 256*256;
+% % input images
+% figure(1);
+% for i = 1:8
+%     subplot(4,2,i);
+%     imagesc(reshape(teX(21,(i-1)*numPixels+1:i*numPixels),256,256));
+%     colormap gray;
+%     axis off;
+% end
+% 
+% % output images (first scenario)
+% figure(2);
+% for i = 1:8
+%     subplot(4,2,i);
+%     imagesc(reshape(teP_Original((i-1)*numPixels+1:i*numPixels),256,256));
+%     colormap gray;
+%     axis off;
+% end
+%     
+% % output images (second scenario)
+% figure(3);
+% for i = 1:8
+%     subplot(4,2,i);
+%     imagesc(reshape(teP_subsample((i-1)*numPixels+1:i*numPixels),256,256));
+%     colormap gray;
+%     axis off;
+% end
