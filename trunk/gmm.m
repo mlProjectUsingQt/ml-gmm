@@ -11,7 +11,10 @@ prev_loglikelihood = -1.0;
 % Initialization
 % CV: D-by-D-by-K matrix, covariances for each cluster
 % weights: K-by-1 vector, weight (pi_k) for each cluster
+gmm_init_start_time = tic;
 [C CV weights] = gmm_init(X, K);
+gmm_init_time = toc(gmm_init_start_time);
+fprintf('GMM init time (s): %f\n', gmm_init_time);
 weighted_gaussians = gaussian(X, C, CV) .* repmat(weights', N, 1);
 sum_over_k_weighted_gaussians = sum(weighted_gaussians, 2);
 for itr = 1: max_iteration
@@ -29,7 +32,7 @@ for itr = 1: max_iteration
     CV(:, :, k) = (repmat(Z(:, k)', D, 1) .* diff') * diff / Nk(k);
   end
   % Estimate weights (PRML: eq. 9.26)
-  weights = Nk / N;  
+  weights = Nk / N;
   
 %   [max_porb hard_assignment] = max(Z, [], 2);
 %   cluster1 = (hard_assignment == 1);
@@ -64,11 +67,19 @@ function prob = gaussian (X, means, covars)
 % X: N-by-D matrix, data points
 % means: K-by-D matrix, means
 % covars: D-by-D-by-K matrix, covariances
+% [N D] = size(X);
 N = size(X, 1);
 K = size(means, 1);
 prob = zeros(N, K);
 for k = 1: K
   prob(:, k) = mvnpdf(X, means(k, :), squeeze(covars(:, :, k)));
+%   sigma = squeeze(covars(:, :, k));
+%   mu = means(k, :);
+%   coef = (2 * pi) ^ (-D / 2) * det(sigma) ^ (-0.5);
+%   parfor n = 1: N
+%     diff = X(n, :) - mu;
+%     prob(n, k) = exp(-0.5 * diff * sigma * diff') * coef;
+%   end
 end
 
 function [C CV weights] = gmm_init (X, K)
@@ -78,12 +89,50 @@ function [C CV weights] = gmm_init (X, K)
 % weights: K-by-1 vector, weight (pi_k) for each cluster
 % X: N-by-D matrix, data points
 % K: scalar, # of clusters
-[idx C] = kmeans(X, K, 'replicates', 10, 'start', 'sample');
+
+% opts = statset('MaxIter', 10);
+% [idx C] = kmeans(X, K, 'start', 'sample', 'options', opts);
+% [N D] = size(X);
+% CV = zeros(D, D, K);
+% weights = zeros(K, 1);
+% for k = 1: K
+%   Xk = X(idx == k, :);
+%   Nk = size(Xk, 1);
+%   diff = Xk - repmat(C(k, :), Nk, 1);
+%   CV(:, :, k) = diff' * diff / Nk;
+%   weights(k) = Nk / N;
+% end
+
 [N D] = size(X);
+C = zeros(K, D);
+isPicked = zeros(N, 1);
+idx = randi(N);
+C(1, :) = X(idx, :);
+isPicked(idx) = 1;
+for k = 2: K
+  C_bar = mean(C(1: k - 1, :), 1);
+  dist2 = sum((X - repmat(C_bar, N, 1)) .^ 2, 2);
+  dmax = -1.0;
+  idx = 0;
+  for n = 1: N
+    if isPicked(n) == 0 && dist2(n) > dmax
+      dmax = dist2(n);
+      idx = n;
+    end
+  end
+  C(k, :) = X(idx, :);
+  isPicked(idx) = 1;
+end
+Z = zeros(N, 1);
+for n = 1: N
+  d2 = sum((repmat(X(n, :), K, 1) - C) .^ 2, 2);
+  [dmax k] = min(d2);
+  Z(n) = k;
+end
 CV = zeros(D, D, K);
 weights = zeros(K, 1);
 for k = 1: K
-  Xk = X(idx == k, :);
+  Xk = X(Z == k, :);
   Nk = size(Xk, 1);
   diff = Xk - repmat(C(k, :), Nk, 1);
   CV(:, :, k) = diff' * diff / Nk;
