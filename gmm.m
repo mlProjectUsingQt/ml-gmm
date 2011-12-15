@@ -1,136 +1,71 @@
-function [C Z] = gmm (X, K)
-% Use EM to fit Gaussian mixture model
-% C: K-by-D matrix, cluster centers
-% Z: N-by-K matrix, soft assignments
-% X: N-by-D matrix, data points
-% K: scalar, # of clusters
-max_iteration = 100;
-loglikelihood_threshold = 1e-6;
-prev_loglikelihood = -1.0;
+function [means Z] = gmm (X, K)
+% means: K * D
+% Z: N * K
+% X: N * D
+% K: scalar
+means = gmm_init(X, K, 'random'); % Initialization
+max_itr = 20; % Max # of iterations
+loglik_th = 1e-6; % log likelihood difference threshold
+loglik_prev = -1.0; % last iteration log likelihood
 [N D] = size(X);
-% Initialization
-% CV: D-by-D-by-K matrix, covariances for each cluster
-% weights: K-by-1 vector, weight (pi_k) for each cluster
-gmm_init_start_time = tic;
-[C CV weights] = gmm_init(X, K);
-gmm_init_time = toc(gmm_init_start_time);
-fprintf('GMM init time (s): %f\n', gmm_init_time);
-weighted_gaussians = gaussian(X, C, CV) .* repmat(weights', N, 1);
-sum_over_k_weighted_gaussians = sum(weighted_gaussians, 2);
-for itr = 1: max_iteration
+covars = zeros(K, D);
+weights = ones(K, 1) / K;
+[probs diffs] = gaussian(X, means, covars);
+wprobs = probs .* repmat(weights', N, 1);
+wprobs_sum = sum(wprobs, 2);
+for itr = 1: max_itr
   % E-step
-  % Evaluate responsibilities (PRML: eq. 9.23)
-  Z = weighted_gaussians ./ repmat(sum_over_k_weighted_gaussians, 1, K);
+  Z = wprobs ./ repmat(wprobs_sum, 1, K);
   % M-step
-  % Compute Nk (K-by-1 vector) (PRML: eq. 9.27)
   Nk = sum(Z, 1)';
-  % Estimate means (PRML: eq. 9.24)
-  C = Z' * X ./repmat(Nk, 1, D);
-  % Estimate covariances (PRML: eq. 9.25)
+  means = Z' * X ./repmat(Nk, 1, D);
   for k = 1: K
-    diff = X - repmat(C(k, :), N, 1);
-    CV(:, :, k) = (repmat(Z(:, k)', D, 1) .* diff') * diff / Nk(k);
+    covars(k, :) = Z(:, k)' * (squeeze(diffs(:, k, :)) .^ 2) / Nk(k);
   end
-  % Estimate weights (PRML: eq. 9.26)
   weights = Nk / N;
-  % Update weighted gaussians and its sum-over-k
-  weighted_gaussians = gaussian(X, C, CV) .* repmat(weights', N, 1);
-  sum_over_k_weighted_gaussians = sum(weighted_gaussians, 2);
-  % Evaluate log likelihood
-  loglikelihood = sum(log(sum_over_k_weighted_gaussians));
+  % Update distributions
+  [probs diffs] = gaussian(X, means, covars);
+  wprobs = probs .* repmat(weights', N, 1);
+  wprobs_sum = sum(wprobs, 2);
   % Check convergence
-  if abs(loglikelihood - prev_loglikelihood) < loglikelihood_threshold
+  loglik = sum(log(wprobs_sum));
+  if abs(loglik - loglik_prev) < loglik_th
     break;
   end
-  prev_loglikelihood = loglikelihood;
+  loglik_prev = loglik;
 end
-% disp([num2str(itr) ' iterations, log-likelihood = ' ...
-%     num2str(loglikelihood)]);
 
-function prob = gaussian (X, means, covars)
-% Compute probabilities w.r.t. Gaussian distribution
-% prob: N-by-K matrix, prob(n, k) = Nor(X(N, :), means(k, :), covars(k, :, :))
-% X: N-by-D matrix, data points
-% means: K-by-D matrix, means
-% covars: D-by-D-by-K matrix, covariances
-% [N D] = size(X);
+
+
+function [probs diffs] = gaussian (X, means, covars)
+% probs: N * K
+% diffs: N * K * D
+% X: N * D
+% means: K * D
+% covars: K * D
 [N D] = size(X);
 K = size(means, 1);
-prob = zeros(N, K);
-for k = 1: K
-%   prob(:, k) = mvnpdf(X, means(k, :), squeeze(covars(:, :, k)));
-  sigma = squeeze(covars(:, :, k));
-  mu = means(k, :);
-  coef = (2 * pi) ^ (-D / 2) * det(sigma) ^ (-0.5);
-  parfor n = 1: N
-    diff = X(n, :) - mu;
-    prob(n, k) = exp(-0.5 * diff * sigma * diff') * coef;
-  end
+diffs = zeros(N, K, D);
+expo = zeros(N, K); % N * K
+for d = 1: D
+  diffs(:, :, d) = repmat(X(:, d), 1, K) - repmat(means(:, d)', N, 1);
+  expo = expo + ...
+    squeeze(diffs(:, :, d)) .^ 2 ./ repmat(covars(:, d)', N, 1);
 end
+probs = exp(-(repmat((log(prod(covars, 2)))', N, 1) + expo) / 2);
 
-function [C CV weights] = gmm_init (X, K)
-% Use k-means to initialize GMM
-% C: K-by-D matrix, cluster centers
-% CV: D-by-D-by-K matrix, covariances for each cluster
-% weights: K-by-1 vector, weight (pi_k) for each cluster
-% X: N-by-D matrix, data points
-% K: scalar, # of clusters
 
-% opts = statset('MaxIter', 10);
-% [idx C] = kmeans(X, K, 'start', 'sample', 'options', opts);
-[idx C] = kmeans(X, K, 'start', 'sample');
-[N D] = size(X);
-CV = zeros(D, D, K);
-weights = zeros(K, 1);
-for k = 1: K
-  Xk = X(idx == k, :);
-  Nk = size(Xk, 1);
-  diff = Xk - repmat(C(k, :), Nk, 1);
-  CV(:, :, k) = diff' * diff / Nk;
-  weights(k) = Nk / N;
+
+function means = gmm_init (X, K, init_type)
+% means: K * D
+% covars: K * D
+% weights: K * 1
+% X: N * D
+% K: scalar
+% init_type: string
+N = size(X, 1);
+if nargin < 3 || strcmp(init_type, 'random')
+  perm = randperm(N);
+  perm = perm(1: K);
+  means = X(perm, :);
 end
-
-% [N D] = size(X);
-% C = zeros(K, D);
-% isPicked = zeros(N, 1);
-% idx = randi(N);
-% C(1, :) = X(idx, :);
-% isPicked(idx) = 1;
-% for k = 2: K
-%   C_bar = mean(C(1: k - 1, :), 1);
-%   dist2 = sum((X - repmat(C_bar, N, 1)) .^ 2, 2);
-%   dmax = -1.0;
-%   idx = 0;
-%   for n = 1: N
-%     if isPicked(n) == 0 && dist2(n) > dmax
-%       dmax = dist2(n);
-%       idx = n;
-%     end
-%   end
-%   C(k, :) = X(idx, :);
-%   isPicked(idx) = 1;
-% end
-% Z = zeros(N, 1);
-% for n = 1: N
-%   d2 = sum((repmat(X(n, :), K, 1) - C) .^ 2, 2);
-%   [dmax k] = min(d2);
-%   Z(n) = k;
-% end
-% CV = zeros(D, D, K);
-% weights = zeros(K, 1);
-% for k = 1: K
-%   Xk = X(Z == k, :);
-%   Nk = size(Xk, 1);
-%   diff = Xk - repmat(C(k, :), Nk, 1);
-%   CV(:, :, k) = diff' * diff / Nk;
-%   weights(k) = Nk / N;
-% end
-
-% cluster1 = (idx == 1);
-% cluster2 = (idx == 2);
-% figure, hold on;
-% grid on;
-% scatter(X(cluster1, 1), X(cluster1, 2), 'r+');
-% scatter(X(cluster2, 1), X(cluster2, 2), 'bo');
-% scatter(C(1, 1), C(1, 2), 'ro', 'filled');
-% scatter(C(2, 1), C(2, 2), 'bo', 'filled');
